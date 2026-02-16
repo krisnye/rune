@@ -1,0 +1,35 @@
+{
+  "name": "tictactoe",
+  "version": "0.1.0",
+  "description": "Pixi visualization sample using Adobe ECS patterns.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "clean": "rm -rf dist",
+    "dev": "vite",
+    "dev:agent": "tsx ./src/agent-dev-server.ts",
+    "lint": "pnpm run typecheck",
+    "test": "pnpm run typecheck && riteway \"test/**/*.test.mjs\" && tsx ./node_modules/riteway/bin/riteway \"src/types/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@paralleldrive/rune": "workspace:*",
+    "@adobe/data": "^0.9.22",
+    "@adobe/data-react": "0.9.22",
+    "@pixi/react": "latest",
+    "pixi.js": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "riteway": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vite-plugin-checker": "latest"
+  }
+}

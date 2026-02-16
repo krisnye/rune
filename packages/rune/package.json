@@ -1,0 +1,49 @@
+{
+  "name": "@paralleldrive/rune",
+  "version": "0.1.0",
+  "description": "Jiron-based MCP-style server for ECS applications.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paralleldrive/rune.git"
+  },
+  "homepage": "https://github.com/paralleldrive/rune",
+  "bugs": {
+    "url": "https://github.com/paralleldrive/rune/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "dev": "pnpm run dev:types",
+    "dev:types": "tsc -p tsconfig.json -w --preserveWatchOutput",
+    "lint": "pnpm run typecheck",
+    "test": "pnpm run build && riteway \"test/**/*.test.mjs\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@adobe/data": "^0.9.22"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "riteway": "latest",
+    "typescript": "latest"
+  }
+}
