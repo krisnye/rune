@@ -1,5 +1,5 @@
 import { useObservableValues } from "@adobe/data-react";
-import { useDatabase } from "./hooks/use-database.js";
+import { useTicTacToeDatabase } from "./hooks/use-tictactoe-database.js";
 import { BoardState } from "./types/board-state/board-state.js";
 
 interface HudValues {
@@ -8,7 +8,7 @@ interface HudValues {
 }
 
 export const TicTacToeHud = () => {
-  const db = useDatabase() as unknown as {
+  const db = useTicTacToeDatabase() as unknown as {
     observe: {
       resources: {
         board: unknown;

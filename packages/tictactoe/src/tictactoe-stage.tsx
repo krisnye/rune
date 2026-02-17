@@ -1,41 +1,31 @@
 import { useObservableValues } from "@adobe/data-react";
-import { useDatabase } from "./hooks/use-database.js";
+import { useTicTacToeDatabase } from "./hooks/use-tictactoe-database.js";
 import { BoardState } from "./types/board-state/board-state.js";
 
 const cellSize = 110;
 const boardOriginX = 155;
 const boardOriginY = 70;
 
-interface StageValues {
-  readonly board: string;
-}
-
 export const TicTacToeStage = () => {
-  const db = useDatabase() as unknown as {
-    observe: {
-      resources: {
-        board: unknown;
-      };
-    };
-    transactions: unknown;
-  };
+  // every element first gets the common database service
+  const db = useTicTacToeDatabase()
+  // then they use whichever observable values they need
+  // whenever these values change this hook will trigger a re-render.
   const values = useObservableValues(
     () => ({
-      board: db.observe.resources.board as any
+      // pattern is name: Observe function
+      board: db.observe.resources.board
     }),
-    []
-  ) as StageValues | undefined;
+    [] // dependencies, rarely needed. Only if you had a parameter used in the useObservableValues input.
+  );
 
-  if (!values || typeof values.board !== "string") {
+  if (!values) {
     return null;
   }
 
-  const transactions = db.transactions as unknown as {
-    playMove: (args: { readonly index: number }) => void;
-  };
-  const winningLine = BoardState.getWinningLine(values.board as any);
+  const winningLine = BoardState.getWinningLine(values.board);
   const winningSet = new Set(winningLine ?? []);
-  const status = BoardState.deriveStatus(values.board as any);
+  const status = BoardState.deriveStatus(values.board);
 
   return (
     <pixiContainer>
@@ -54,7 +44,7 @@ export const TicTacToeStage = () => {
               y={y}
               eventMode={isPlayable ? "static" : "none"}
               cursor={isPlayable ? "pointer" : "default"}
-              onClick={() => transactions.playMove({ index })}
+              onClick={() => db.transactions.playMove({ index })}
               draw={(graphics) => {
                 graphics.clear();
                 graphics.rect(0, 0, cellSize - 4, cellSize - 4);
