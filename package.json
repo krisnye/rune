@@ -8,9 +8,8 @@
   "scripts": {
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
-    "dev": "sh -c 'pnpm --filter tictactoe run dev & pnpm --filter tictactoe run dev:agent; wait'",
+    "dev": "pnpm --filter @paralleldrive/rune run build && pnpm --filter tictactoe run dev",
     "dev:web": "pnpm --filter tictactoe run dev",
-    "dev:agent": "pnpm --filter tictactoe run dev:agent",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",

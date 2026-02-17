@@ -232,6 +232,9 @@ export const mountRuneBridgeStatusElement = ({
     } else {
       elementRecord[statusElementAttribute] = "true";
     }
+    if (elementRecord.style && typeof elementRecord.style === "object") {
+      (elementRecord.style as Record<string, string>).display = "inline-block";
+    }
     if (className && "className" in elementRecord) {
       elementRecord.className = className;
     }

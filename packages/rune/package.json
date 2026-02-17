@@ -50,12 +50,15 @@
     "@adobe/data": "^0.9.27"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
+    "@types/react-dom": "latest",
     "react": "latest",
+    "react-dom": "latest",
     "riteway": "latest",
     "typescript": "latest"
   }

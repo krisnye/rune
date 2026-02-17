@@ -7,5 +7,8 @@ export default defineConfig({
   plugins: [react(), checker({ typescript: true }), createRuneDevBridgeVitePlugin()],
   root: ".",
   build: { outDir: "dist" },
-  server: { port: 3002, open: false }
+  server: { port: 3002, open: false },
+  optimizeDeps: {
+    exclude: ["@paralleldrive/rune"]
+  }
 });

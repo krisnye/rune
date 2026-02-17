@@ -13,7 +13,19 @@ const resolveEnabled = (enabled: boolean | undefined): boolean => {
   }
 
   const maybeImportMeta = import.meta as unknown as { readonly env?: { readonly DEV?: unknown } };
-  return maybeImportMeta.env?.DEV === true;
+  const devFlag = maybeImportMeta.env?.DEV;
+
+  if (devFlag === true) {
+    return true;
+  }
+
+  if (devFlag === false) {
+    return false;
+  }
+
+  // Fallback: if we're running in a browser (no explicit env flag),
+  // assume dev mode so the bridge can be used without extra wiring.
+  return typeof window !== "undefined";
 };
 
 const createInertHandle = (): ActivatedRuneDevBridge => {

@@ -165,13 +165,16 @@ export const createRuneDevBridgeVitePlugin = ({
     }
   };
 
-  const relayToHost = async ({
-    type,
-    payload
-  }: {
-    readonly type: string;
-    readonly payload?: unknown;
-  }): Promise<unknown> => {
+  const relayToHost = async (
+    {
+      type,
+      payload
+    }: {
+      readonly type: string;
+      readonly payload?: unknown;
+    },
+    overrideTimeoutMs?: number
+  ): Promise<unknown> => {
     const host = registry.getHost();
     if (!host) {
       throw {
@@ -182,15 +185,16 @@ export const createRuneDevBridgeVitePlugin = ({
 
     const requestId = `relay-${nextRelayRequestId}`;
     nextRelayRequestId += 1;
+    const effectiveTimeoutMs = overrideTimeoutMs ?? relayTimeoutMs;
 
     return new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingRelayRequests.delete(requestId);
         reject({
           code: "relay_timeout",
-          message: `Timed out waiting for host response after ${relayTimeoutMs}ms`
+          message: `Timed out waiting for host response after ${effectiveTimeoutMs}ms`
         });
-      }, relayTimeoutMs);
+      }, effectiveTimeoutMs);
 
       pendingRelayRequests.set(requestId, { hostId: host.hostId, resolve, reject, timeout });
       host.send(createBridgeEnvelope({ requestId, type, payload }));
@@ -246,18 +250,34 @@ export const createRuneDevBridgeVitePlugin = ({
 
             try {
               const input = await parseBody(request);
-              const payload = actionName === "wait"
-                ? await relayToHost({
-                    type: "waitForChange",
-                    payload: input
-                  })
-                : await relayToHost({
-                    type: "invokeAction",
-                    payload: {
-                      actionName,
-                      input
-                    }
-                  });
+              // For wait, use a relay timeout at least as long as the requested wait so the host
+              // can respond with { ok: true, timedOut: true, snapshot } when no change occurs.
+              const waitRequestTimeoutMs =
+                actionName === "wait" &&
+                input !== undefined &&
+                typeof input === "object" &&
+                input !== null &&
+                "timeoutMs" in input
+                  ? Math.max(0, Number((input as { timeoutMs?: unknown }).timeoutMs))
+                  : 0;
+              const relayTimeoutForWait =
+                Number.isFinite(waitRequestTimeoutMs) && waitRequestTimeoutMs > 0
+                  ? Math.max(relayTimeoutMs, waitRequestTimeoutMs + 2000)
+                  : undefined;
+
+              const payload =
+                actionName === "wait"
+                  ? await relayToHost(
+                      { type: "waitForChange", payload: input },
+                      relayTimeoutForWait
+                    )
+                  : await relayToHost({
+                      type: "invokeAction",
+                      payload: {
+                        actionName,
+                        input
+                      }
+                    });
 
               sendJson(response, 200, payload);
             } catch (error) {
@@ -280,22 +300,43 @@ export const createRuneDevBridgeVitePlugin = ({
       server.ws.on("connection", (socket, request) => {
         const pathname = pathnameOf(request.url);
         const isBridgePath = pathname === wsPath;
-        const transport = {
-          id: socket,
-          send: (payload: unknown) => sendEnvelope(socket, payload)
-        };
 
         const processBridgeEnvelope = (rawEnvelope: unknown): void => {
           try {
             const parsed = parseMessage(rawEnvelope);
-            const validated = validateBridgeEnvelope(parsed);
+            // Vite HMR sends custom events as { type: "custom", event: runeDevBridgeEventName, data: envelope }
+            // over the same WebSocket; unwrap so we validate the inner envelope.
+            const isHmrCustom =
+              typeof parsed === "object" &&
+              parsed !== null &&
+              "type" in (parsed as object) &&
+              (parsed as { type: unknown }).type === "custom" &&
+              "event" in (parsed as object) &&
+              (parsed as { event: unknown }).event === runeDevBridgeEventName &&
+              "data" in (parsed as object);
+            const envelopePayload = isHmrCustom
+              ? (parsed as { data: unknown }).data
+              : parsed;
+            const validated = validateBridgeEnvelope(envelopePayload);
 
             if (!validated.ok) {
-              // Ignore non-bridge messages (e.g. Vite HMR sockets).
               return;
             }
 
             const envelope = validated.value;
+            // When the message came via HMR custom event, responses must be wrapped so the client's
+            // hmr.on(event, cb) is invoked (Vite only dispatches when type === "custom").
+            const sendResponse = (responseEnvelope: ReturnType<typeof createBridgeEnvelope>): void => {
+              if (isHmrCustom) {
+                sendEnvelope(socket, {
+                  type: "custom",
+                  event: runeDevBridgeEventName,
+                  data: responseEnvelope
+                });
+              } else {
+                sendEnvelope(socket, responseEnvelope);
+              }
+            };
             const envelopeHostId = typeof envelope.extensions?.hostId === "string"
               ? envelope.extensions.hostId
               : undefined;
@@ -309,12 +350,13 @@ export const createRuneDevBridgeVitePlugin = ({
               return;
             }
 
-            if (!isBridgePath) {
+            // Process registerHost from dedicated bridge path or from HMR custom event (same socket).
+            if (!isBridgePath && !isHmrCustom) {
               return;
             }
 
             if (envelope.type !== "registerHost") {
-              sendEnvelope(socket, createBridgeEnvelope({
+              sendResponse(createBridgeEnvelope({
                 requestId: envelope.requestId,
                 type: "error",
                 payload: {
@@ -330,7 +372,7 @@ export const createRuneDevBridgeVitePlugin = ({
               : "";
 
             if (hostId.trim() === "") {
-              transport.send(createBridgeEnvelope({
+              sendResponse(createBridgeEnvelope({
                 requestId: envelope.requestId,
                 type: "registerHostResult",
                 payload: {
@@ -341,8 +383,24 @@ export const createRuneDevBridgeVitePlugin = ({
               return;
             }
 
+            // Transport for this host: when relaying (getSnapshot, invokeAction, etc.), we must send
+            // in HMR custom format if the host registered via HMR so the client's hmr.on() receives it.
+            const transport = {
+              id: socket,
+              send: (payload: unknown): void => {
+                if (isHmrCustom) {
+                  sendEnvelope(socket, {
+                    type: "custom",
+                    event: runeDevBridgeEventName,
+                    data: payload
+                  });
+                } else {
+                  sendEnvelope(socket, payload);
+                }
+              }
+            };
             const registration = registry.registerHost(hostId, transport);
-            transport.send(createBridgeEnvelope({
+            sendResponse(createBridgeEnvelope({
               requestId: envelope.requestId,
               type: "registerHostResult",
               payload: {

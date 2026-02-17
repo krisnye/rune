@@ -21,7 +21,7 @@ type HmrClient = {
 };
 
 export interface UseRuneDevBridgeReactArgs {
-  readonly service: AgenticService;
+  readonly service: AgenticService | undefined;
   readonly enabled?: boolean;
   readonly hmrClient?: HmrClient;
   readonly debugUi?: {
@@ -33,6 +33,11 @@ export interface UseRuneDevBridgeReactArgs {
   readonly onStatusChange?: (status: RuneDevBridgeStatus) => void;
 }
 
+/**
+ * Props for the dev bridge host component.
+ * Only `service` is required; pass your AgenticService (e.g. from db.services.agent).
+ * In Vite, `enabled` and `hmrClient` default from import.meta.env.DEV and import.meta.hot.
+ */
 export interface RuneDevBridgeReactProps {
   readonly service: AgenticService;
   readonly enabled?: boolean;
@@ -85,6 +90,9 @@ export const useRuneDevBridgeReact = ({
   );
 
   useEffect(() => {
+    if (service == null) {
+      return;
+    }
     let disposed = false;
     let stopBridge = () => {};
 
@@ -114,30 +122,38 @@ export const useRuneDevBridgeReact = ({
   return status;
 };
 
+const statusLabel = (status: RuneDevBridgeStatus, labels: Partial<RuneDevBridgeDebugLabels> = {}): string => {
+  if (status.hostAccepted) return labels.hostActive ?? "Host Active";
+  if (status.socketConnected) return labels.connectedStandby ?? "Connected";
+  return labels.disconnected ?? "Disconnected";
+};
+
+const statusColor = (status: RuneDevBridgeStatus): string => {
+  if (status.hostAccepted) return "#22c55e";
+  if (status.socketConnected) return "#f59e0b";
+  return "#ef4444";
+};
+
+const getDefaultHmrClient = (): HmrClient | undefined => {
+  const meta = typeof import.meta !== "undefined" ? (import.meta as { hot?: HmrClient }).hot : undefined;
+  return meta;
+};
+
+/** Mount the rune dev bridge; only `service` is required. Use with Vite dev server + createRuneDevBridgeVitePlugin(). */
 export const RuneDevBridgeReact = ({
   service,
   enabled,
-  hmrClient,
+  hmrClient: hmrClientProp,
   showStatus = true,
-  statusClassName,
   statusLabels,
-  statusPosition,
   onStatusChange
 }: RuneDevBridgeReactProps): ReactElement | null => {
-  const [statusHost, setStatusHost] = useState<unknown>(null);
-
-  useRuneDevBridgeReact({
+  const hmrClient = hmrClientProp ?? getDefaultHmrClient();
+  const status = useRuneDevBridgeReact({
     service,
     enabled,
     hmrClient,
-    debugUi: showStatus
-      ? {
-          host: statusHost,
-          className: statusClassName,
-          labels: statusLabels,
-          position: statusPosition
-        }
-      : undefined,
+    debugUi: undefined,
     onStatusChange
   });
 
@@ -145,9 +161,38 @@ export const RuneDevBridgeReact = ({
     return null;
   }
 
-  return createElement("div", {
-    ref: (node: unknown) => {
-      setStatusHost(node);
-    }
-  });
+  const label = statusLabel(status, statusLabels);
+  const color = statusColor(status);
+
+  return createElement(
+    "div",
+    {
+      style: {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        zIndex: 2147483647,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        padding: "6px 10px",
+        fontSize: "0.8rem",
+        fontFamily: "system-ui, sans-serif",
+        color: "#0f172a",
+        background: "#facc15",
+        border: "2px solid #ca8a04",
+        borderRadius: "4px"
+      },
+      "data-rune-bridge-host": "true"
+    },
+    createElement("span", null, "Rune Bridge"),
+    createElement("span", {
+      style: {
+        color,
+        border: `1px solid ${color}`,
+        borderRadius: "999px",
+        padding: "0.1rem 0.55rem"
+      }
+    }, label)
+  );
 };

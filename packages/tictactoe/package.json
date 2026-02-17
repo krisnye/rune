@@ -8,7 +8,6 @@
     "build": "vite build",
     "clean": "rm -rf dist",
     "dev": "vite",
-    "dev:agent": "tsx ./src/agent-dev-server.ts",
     "lint": "pnpm run typecheck",
     "test": "pnpm run typecheck && riteway \"test/**/*.test.mjs\" && tsx ./node_modules/riteway/bin/riteway \"src/types/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"

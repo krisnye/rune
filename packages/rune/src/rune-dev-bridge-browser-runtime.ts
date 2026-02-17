@@ -13,10 +13,21 @@ import {
 const bridgeActionsBasePath = "/__rune_bridge/actions/";
 const bridgeDefaultWaitTimeoutMs = 30_000;
 
+/** Tells an AI agent how to formulate a valid action request. */
+const ACTION_REQUEST_CONVENTION =
+  "POST to the action href with Content-Type: application/json. Request body must be a single JSON value that validates against the action's input schema (e.g. integer 0–8 for playMove; object { since?, timeoutMs? } for wait). Do not wrap the value in { input: ... }.";
+
 type BridgeSnapshot = {
   readonly revision: number;
   readonly states: Record<string, { readonly schema: unknown; readonly value: unknown }>;
-  readonly actions: Record<string, { readonly schema: unknown; readonly method: "POST"; readonly href: string; readonly meta?: true }>;
+  readonly actions: Record<string, {
+    readonly input: unknown;
+    readonly method: "POST";
+    readonly href: string;
+    readonly meta?: true;
+  }>;
+  /** Tells an AI agent how to formulate a valid action request. */
+  readonly _actionRequestBody: string;
 };
 
 type WaitRequest = {
@@ -53,6 +64,12 @@ type HmrClient = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+
+/** Schema for the request body: use action's input schema if present, else the whole schema. */
+const bodySchema = (action: { readonly schema: unknown }): unknown =>
+  isRecord(action.schema) && "input" in action.schema
+    ? (action.schema as { input: unknown }).input
+    : action.schema;
 
 const parseWaitRequest = (payload: unknown): WaitRequest | null => {
   if (payload === undefined) {
@@ -157,19 +174,20 @@ export const createRuneBrowserHostRuntime = ({
   const buildSnapshot = (): BridgeSnapshot => ({
     revision,
     states: currentStates,
+    _actionRequestBody: ACTION_REQUEST_CONVENTION,
     actions: {
       ...Object.fromEntries(
         Object.entries(currentActions).map(([actionName, action]) => [
           actionName,
           {
-            schema: action.schema,
+            input: bodySchema(action),
             method: "POST" as const,
             href: `${bridgeActionsBasePath}${encodeURIComponent(actionName)}`
           }
         ])
       ),
       wait: {
-        schema: {
+        input: {
           type: "object",
           properties: {
             since: { type: "integer", minimum: 0 },
