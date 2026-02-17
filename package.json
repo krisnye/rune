@@ -15,5 +15,8 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "publish:all": "node ./scripts/publish-all-public.mjs"
+  },
+  "dependencies": {
+    "@adobe/data": "0.9.27"
   }
 }

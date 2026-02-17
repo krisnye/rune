@@ -53,3 +53,12 @@ export {
   type BridgeHostRegistry,
   type RuneDevBridgeVitePluginConfig
 } from "./vite-rune-dev-bridge.js";
+
+export {
+  activateRuneDevBridge,
+  type ActivateRuneDevBridgeArgs,
+  type ActivatedRuneDevBridge,
+  type RuneDevBridgeStatus,
+  type RuneDevBridgeDebugLabels,
+  type RuneDevBridgeDebugUiOptions
+} from "./activate-rune-dev-bridge.js";

@@ -1,18 +1,13 @@
 import { useObservableValues } from "@adobe/data-react";
 import { useDatabase } from "./hooks/use-database.js";
 import { BoardState } from "./types/board-state/board-state.js";
-import { type RuneDevBridgeStatus } from "./rune-dev-bridge/create-browser-host.js";
 
 interface HudValues {
   readonly board: string;
   readonly firstPlayer: "X" | "O";
 }
 
-export const TicTacToeHud = ({
-  bridgeStatus
-}: {
-  readonly bridgeStatus?: RuneDevBridgeStatus;
-}) => {
+export const TicTacToeHud = () => {
   const db = useDatabase() as unknown as {
     observe: {
       resources: {
@@ -46,38 +41,9 @@ export const TicTacToeHud = ({
   const statusText =
     status === "won" && winner !== null ? `Winner: ${winner}` : status === "draw" ? "Draw" : `Current Player: ${currentPlayer}`;
 
-  const bridgeLabel = !import.meta.env.DEV
-    ? null
-    : bridgeStatus?.hostAccepted
-      ? "Bridge: Host Active"
-      : bridgeStatus?.socketConnected
-        ? "Bridge: Connected (standby)"
-        : "Bridge: Disconnected";
-
-  const bridgeColor = !import.meta.env.DEV
-    ? "#6b7280"
-    : bridgeStatus?.hostAccepted
-      ? "#22c55e"
-      : bridgeStatus?.socketConnected
-        ? "#f59e0b"
-        : "#ef4444";
-
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
       <strong style={{ color: "#e5e7eb" }}>{statusText}</strong>
-      {bridgeLabel ? (
-        <span
-          style={{
-            color: bridgeColor,
-            border: `1px solid ${bridgeColor}`,
-            borderRadius: "999px",
-            padding: "0.1rem 0.55rem",
-            fontSize: "0.8rem"
-          }}
-        >
-          {bridgeLabel}
-        </span>
-      ) : null}
       <button onClick={() => transactions.restartGame()}>Restart</button>
     </div>
   );

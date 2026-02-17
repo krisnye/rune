@@ -1,21 +1,17 @@
 import { Observe } from "@adobe/data/observe";
-import { DynamicService } from "@adobe/data/service";
+import { AgenticService } from "@adobe/data/service";
+import { createBridgeEnvelope, validateBridgeEnvelope } from "./dev-bridge-protocol.js";
+import {
+  runeDevBridgeEventName,
+  runeDevBridgeWsPath
+} from "./vite-rune-dev-bridge.js";
+import {
+  createDefaultBridgeStatus,
+  type RuneDevBridgeStatus
+} from "./rune-dev-bridge-client-types.js";
 
-const bridgeProtocol = "rune-dev-bridge";
-const bridgeVersion = 1;
-const bridgeWsPath = "/__rune_bridge_ws";
-const bridgeEventName = "rune-dev-bridge:event";
 const bridgeActionsBasePath = "/__rune_bridge/actions/";
 const bridgeDefaultWaitTimeoutMs = 30_000;
-
-type BridgeEnvelope = {
-  readonly protocol: typeof bridgeProtocol;
-  readonly version: typeof bridgeVersion;
-  readonly requestId: string;
-  readonly type: string;
-  readonly payload?: unknown;
-  readonly extensions?: Record<string, unknown>;
-};
 
 type BridgeSnapshot = {
   readonly revision: number;
@@ -30,64 +26,45 @@ type WaitRequest = {
 
 type BridgeRuntime = {
   readonly stop: () => void;
+  readonly getStatus: () => RuneDevBridgeStatus;
 };
 
-export interface RuneDevBridgeStatus {
-  readonly socketConnected: boolean;
-  readonly hostAccepted: boolean;
-  readonly hostId: string;
-}
-
-const createEnvelope = ({
-  requestId,
-  type,
-  payload,
-  extensions
-}: {
-  readonly requestId: string;
-  readonly type: string;
-  readonly payload?: unknown;
-  readonly extensions?: Record<string, unknown>;
-}): BridgeEnvelope => ({
-  protocol: bridgeProtocol,
-  version: bridgeVersion,
-  requestId,
-  type,
-  payload,
-  extensions
-});
-
-const validateEnvelope = (value: unknown): BridgeEnvelope | null => {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-  const envelope = value as Record<string, unknown>;
-  if (envelope.protocol !== bridgeProtocol) {
-    return null;
-  }
-  if (envelope.version !== bridgeVersion) {
-    return null;
-  }
-  if (typeof envelope.requestId !== "string" || envelope.requestId.trim() === "") {
-    return null;
-  }
-  if (typeof envelope.type !== "string" || envelope.type.trim() === "") {
-    return null;
-  }
-  return envelope as BridgeEnvelope;
+type RuntimeOptions = {
+  readonly service: AgenticService;
+  readonly wsPath?: string;
+  readonly reconnectDelayMs?: number;
+  readonly hmrClient?: HmrClient;
+  readonly onStatusChange?: (status: RuneDevBridgeStatus) => void;
 };
+
+type BridgeWebSocket = {
+  readonly OPEN: number;
+  readonly readyState: number;
+  readonly send: (value: string) => void;
+  readonly close: () => void;
+  readonly addEventListener: (event: "open" | "message" | "close", listener: (event?: unknown) => void) => void;
+};
+
+type HmrClient = {
+  readonly send: (event: string, payload: unknown) => void;
+  readonly on: (event: string, callback: (payload: unknown) => void) => void;
+  readonly off?: (event: string, callback: (payload: unknown) => void) => void;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
 const parseWaitRequest = (payload: unknown): WaitRequest | null => {
   if (payload === undefined) {
     return { since: 0, timeoutMs: bridgeDefaultWaitTimeoutMs };
   }
 
-  if (typeof payload !== "object" || payload === null) {
+  if (!isRecord(payload)) {
     return null;
   }
 
-  const maybeSince = (payload as Record<string, unknown>).since;
-  const maybeTimeoutMs = (payload as Record<string, unknown>).timeoutMs;
+  const maybeSince = payload.since;
+  const maybeTimeoutMs = payload.timeoutMs;
   const since = maybeSince === undefined
     ? 0
     : Number.isInteger(maybeSince) && Number(maybeSince) >= 0
@@ -105,58 +82,72 @@ const parseWaitRequest = (payload: unknown): WaitRequest | null => {
   return { since, timeoutMs };
 };
 
-const toSocketUrl = (wsPath: string): string => {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}${wsPath}`;
+const getWindowLocation = (): { readonly protocol: string; readonly host: string } | null => {
+  const maybeWindow = (globalThis as { readonly window?: unknown }).window;
+  if (!isRecord(maybeWindow) || !isRecord(maybeWindow.location)) {
+    return null;
+  }
+
+  const protocol = typeof maybeWindow.location.protocol === "string" ? maybeWindow.location.protocol : "";
+  const host = typeof maybeWindow.location.host === "string" ? maybeWindow.location.host : "";
+  return protocol && host ? { protocol, host } : null;
 };
 
-type HmrClient = {
-  readonly send: (event: string, payload: unknown) => void;
-  readonly on: (event: string, callback: (payload: unknown) => void) => void;
-  readonly off?: (event: string, callback: (payload: unknown) => void) => void;
+const toSocketUrl = (wsPath: string): string => {
+  const location = getWindowLocation();
+  if (!location) {
+    throw new Error("Rune dev bridge host requires a browser runtime");
+  }
+
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${location.host}${wsPath}`;
 };
 
 const getHmrClient = (): HmrClient | null => {
-  if (!import.meta.env.DEV) {
+  const maybeImportMeta = import.meta as unknown as { readonly env?: { readonly DEV?: unknown }; readonly hot?: HmrClient };
+  if (maybeImportMeta.env?.DEV !== true) {
     return null;
   }
-  const maybeHot = (import.meta as unknown as { hot?: HmrClient }).hot;
-  return maybeHot ?? null;
+  return maybeImportMeta.hot ?? null;
 };
 
-const createHostId = (): string =>
-  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `host-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const createHostId = (): string => {
+  const maybeCrypto = (globalThis as { readonly crypto?: { readonly randomUUID?: () => string } }).crypto;
+  if (maybeCrypto && typeof maybeCrypto.randomUUID === "function") {
+    return maybeCrypto.randomUUID();
+  }
 
-export const createRuneBrowserHost = ({
+  return `host-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const createSocket = (wsPath: string): BridgeWebSocket => {
+  const wsConstructor = (globalThis as { readonly WebSocket?: new (url: string) => BridgeWebSocket }).WebSocket;
+  if (!wsConstructor) {
+    throw new Error("Rune dev bridge host requires WebSocket support");
+  }
+  return new wsConstructor(toSocketUrl(wsPath));
+};
+
+export const createRuneBrowserHostRuntime = ({
   service,
-  wsPath = bridgeWsPath,
+  wsPath = runeDevBridgeWsPath,
   reconnectDelayMs = 1_000,
+  hmrClient: providedHmrClient,
   onStatusChange
-}: {
-  readonly service: DynamicService.DynamicService;
-  readonly wsPath?: string;
-  readonly reconnectDelayMs?: number;
-  readonly onStatusChange?: (status: RuneDevBridgeStatus) => void;
-}): BridgeRuntime => {
+}: RuntimeOptions): BridgeRuntime => {
   let disposed = false;
   let revision = 0;
   let snapshot: BridgeSnapshot | null = null;
   let currentStates: Record<string, { readonly schema: unknown; readonly value: unknown }> = {};
   let currentActions: Record<string, { readonly schema: unknown; readonly execute: (input?: unknown) => Promise<unknown> }> = {};
   let nextRequestId = 1;
-  let socket: WebSocket | null = null;
+  let socket: BridgeWebSocket | null = null;
   let hmrClient: HmrClient | null = null;
   let hmrListener: ((payload: unknown) => void) | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let waitListeners: Array<{ readonly since: number; readonly resolve: (timedOut: boolean) => void; readonly timer: ReturnType<typeof setTimeout> }> = [];
   const hostId = createHostId();
-  let status: RuneDevBridgeStatus = {
-    socketConnected: false,
-    hostAccepted: false,
-    hostId
-  };
+  let status = createDefaultBridgeStatus({ hostId });
 
   const setStatus = (next: RuneDevBridgeStatus): void => {
     status = next;
@@ -218,10 +209,10 @@ export const createRuneBrowserHost = ({
   });
 
   const send = (type: string, requestId: string, payload?: unknown): void => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!socket || socket.readyState !== socket.OPEN) {
       return;
     }
-    socket.send(JSON.stringify(createEnvelope({
+    socket.send(JSON.stringify(createBridgeEnvelope({
       requestId,
       type,
       payload,
@@ -230,7 +221,7 @@ export const createRuneBrowserHost = ({
   };
 
   const sendHmr = (hmr: HmrClient, type: string, requestId: string, payload?: unknown): void => {
-    hmr.send(bridgeEventName, createEnvelope({
+    hmr.send(runeDevBridgeEventName, createBridgeEnvelope({
       requestId,
       type,
       payload,
@@ -246,7 +237,12 @@ export const createRuneBrowserHost = ({
     send(type, requestId, payload);
   };
 
-  const waitForChange = async (payload: unknown): Promise<{ readonly ok: boolean; readonly timedOut: boolean; readonly snapshot: BridgeSnapshot | null } | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }> => {
+  const waitForChange = async (
+    payload: unknown
+  ): Promise<
+    | { readonly ok: true; readonly timedOut: boolean; readonly snapshot: BridgeSnapshot | null }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+  > => {
     const parsed = parseWaitRequest(payload);
     if (!parsed) {
       return {
@@ -279,7 +275,7 @@ export const createRuneBrowserHost = ({
     return { ok: true, timedOut, snapshot };
   };
 
-  const handleRequest = async (envelope: BridgeEnvelope): Promise<void> => {
+  const handleRequest = async (envelope: { readonly requestId: string; readonly type: string; readonly payload?: unknown }): Promise<void> => {
     if (!snapshot) {
       return;
     }
@@ -332,22 +328,24 @@ export const createRuneBrowserHost = ({
       return;
     }
 
-    const hmr = getHmrClient();
+    const hmr = providedHmrClient ?? getHmrClient();
     if (hmr) {
       const onMessage = (raw: unknown) => {
         try {
-          const wrapped = typeof raw === "object" && raw !== null && "envelope" in (raw as Record<string, unknown>)
-            ? raw as { envelope: unknown; toHostId?: unknown }
+          const wrapped = isRecord(raw) && "envelope" in raw
+            ? raw as { readonly envelope: unknown; readonly toHostId?: unknown }
             : null;
 
           if (wrapped && typeof wrapped.toHostId === "string" && wrapped.toHostId !== hostId) {
             return;
           }
 
-          const envelope = validateEnvelope(wrapped ? wrapped.envelope : raw);
-          if (!envelope) {
+          const validated = validateBridgeEnvelope(wrapped ? wrapped.envelope : raw);
+          if (!validated.ok) {
             return;
           }
+
+          const envelope = validated.value;
           if (envelope.type === "registerHostResult") {
             const payload = envelope.payload as { accepted?: unknown; activeHostId?: unknown } | undefined;
             const accepted = payload?.accepted === true;
@@ -372,16 +370,20 @@ export const createRuneBrowserHost = ({
       });
       hmrClient = hmr;
       hmrListener = onMessage;
-      hmr.on(bridgeEventName, onMessage);
+      hmr.on(runeDevBridgeEventName, onMessage);
       sendHmr(hmr, "registerHost", `register-${nextRequestId}`, { hostId });
       nextRequestId += 1;
       return;
     }
 
-    const next = new WebSocket(toSocketUrl(wsPath));
+    const next = createSocket(wsPath);
     socket = next;
 
     next.addEventListener("open", () => {
+      if (disposed) {
+        next.close();
+        return;
+      }
       setStatus({
         socketConnected: true,
         hostAccepted: false,
@@ -393,11 +395,16 @@ export const createRuneBrowserHost = ({
 
     next.addEventListener("message", (event) => {
       try {
-        const parsed = JSON.parse(String(event.data));
-        const envelope = validateEnvelope(parsed);
-        if (!envelope) {
+        const messageEvent = event as { readonly data?: unknown };
+        const parsed = typeof messageEvent?.data === "string"
+          ? JSON.parse(messageEvent.data)
+          : messageEvent?.data;
+        const validated = validateBridgeEnvelope(parsed);
+        if (!validated.ok) {
           return;
         }
+
+        const envelope = validated.value;
         if (envelope.type === "registerHostResult") {
           const payload = envelope.payload as { accepted?: unknown; activeHostId?: unknown } | undefined;
           const accepted = payload?.accepted === true;
@@ -434,6 +441,7 @@ export const createRuneBrowserHost = ({
   connect();
 
   return {
+    getStatus: () => status,
     stop: () => {
       disposed = true;
       if (reconnectTimer) {
@@ -443,11 +451,15 @@ export const createRuneBrowserHost = ({
       waitListeners.forEach((listener) => clearTimeout(listener.timer));
       waitListeners = [];
       if (socket) {
-        socket.close();
-        socket = null;
+        if (socket.readyState !== socket.OPEN) {
+          socket = null;
+        } else {
+          socket.close();
+          socket = null;
+        }
       }
       if (hmrClient && hmrListener && typeof hmrClient.off === "function") {
-        hmrClient.off(bridgeEventName, hmrListener);
+        hmrClient.off(runeDevBridgeEventName, hmrListener);
       }
       hmrClient = null;
       hmrListener = null;

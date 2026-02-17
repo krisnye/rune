@@ -6,17 +6,27 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      '@adobe/data':
+        specifier: 0.9.27
+        version: 0.9.27
 
   packages/rune:
     dependencies:
       '@adobe/data':
-        specifier: ^0.9.22
-        version: 0.9.22
+        specifier: ^0.9.27
+        version: 0.9.27
     devDependencies:
       '@types/node':
         specifier: latest
         version: 25.2.3
+      '@types/react':
+        specifier: latest
+        version: 19.2.14
+      react:
+        specifier: latest
+        version: 19.2.4
       riteway:
         specifier: latest
         version: 9.0.0(@types/node@25.2.3)(react@19.2.4)(tsx@4.21.0)
@@ -27,11 +37,11 @@ importers:
   packages/tictactoe:
     dependencies:
       '@adobe/data':
-        specifier: ^0.9.22
-        version: 0.9.22
+        specifier: ^0.9.27
+        version: 0.9.27
       '@adobe/data-react':
-        specifier: 0.9.22
-        version: 0.9.22(react@19.2.4)
+        specifier: 0.9.27
+        version: 0.9.27(react@19.2.4)
       '@paralleldrive/rune':
         specifier: workspace:*
         version: link:../rune
@@ -75,13 +85,13 @@ importers:
 
 packages:
 
-  '@adobe/data-react@0.9.22':
-    resolution: {integrity: sha512-Iu7ZyAMDZqr3wI6wksp1KyJqvX37NlnOMdEcv6GUD66okKQCWM9+yB07osmyVYHTsaaiLEJdLcPte7HqQlwDlQ==}
+  '@adobe/data-react@0.9.27':
+    resolution: {integrity: sha512-mviUujh003oc/lHIdyHfYRmBNn8QBwSCBhIK8lCv+BdbqoVq4e71m2w7rN1NFfUtkqXL43pf5LTwezaI6O0hJA==}
     peerDependencies:
       react: '>=17.0.0'
 
-  '@adobe/data@0.9.22':
-    resolution: {integrity: sha512-B0Cslu7rK1Dm77TxecjgdOsmEo49WPJFeV65Hj3fz06EG+b55x/xjSs0kKNX9lCXP++XN5nJBF+l+yfQRLkQPg==}
+  '@adobe/data@0.9.27':
+    resolution: {integrity: sha512-QZMubQzT6YAOLlbDnNSKSK/ClLUiYhZDxsYWbBYEaPuiHrxuXRV5sKP/W61N29n/F/dnPcyMJVbxeLXIStsqJQ==}
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -1632,12 +1642,12 @@ packages:
 
 snapshots:
 
-  '@adobe/data-react@0.9.22(react@19.2.4)':
+  '@adobe/data-react@0.9.27(react@19.2.4)':
     dependencies:
-      '@adobe/data': 0.9.22
+      '@adobe/data': 0.9.27
       react: 19.2.4
 
-  '@adobe/data@0.9.22':
+  '@adobe/data@0.9.27':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       jsonpath: 1.2.1

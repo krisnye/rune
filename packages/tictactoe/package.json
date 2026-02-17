@@ -14,9 +14,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@adobe/data": "^0.9.27",
+    "@adobe/data-react": "0.9.27",
     "@paralleldrive/rune": "workspace:*",
-    "@adobe/data": "^0.9.22",
-    "@adobe/data-react": "0.9.22",
     "@pixi/react": "latest",
     "pixi.js": "latest",
     "react": "latest",

@@ -1,30 +1,16 @@
-import { useEffect } from "react";
-import { DynamicService } from "@adobe/data/service";
-import { createRuneBrowserHost, type RuneDevBridgeStatus } from "./create-browser-host.js";
+import { RuneDevBridgeReact } from "@paralleldrive/rune/react";
 import { useDatabase } from "../hooks/use-database.js";
 
-export const RuneDevBridgeHost = ({
-  onStatusChange
-}: {
-  readonly onStatusChange?: (status: RuneDevBridgeStatus) => void;
-}) => {
+export const RuneDevBridgeHost = () => {
   const db = useDatabase();
+  const agentService = db.services.agent;
 
-  useEffect(() => {
-    if (!import.meta.env.DEV) {
-      return;
-    }
-
-    const agentService = (db.services as { readonly agent: DynamicService.DynamicService }).agent;
-    const runtime = createRuneBrowserHost({
-      service: agentService,
-      onStatusChange
-    });
-
-    return () => {
-      runtime.stop();
-    };
-  }, [db, onStatusChange]);
-
-  return null;
+  return (
+    <RuneDevBridgeReact
+      service={agentService}
+      enabled={import.meta.env.DEV}
+      hmrClient={import.meta.hot}
+      showStatus
+    />
+  );
 };

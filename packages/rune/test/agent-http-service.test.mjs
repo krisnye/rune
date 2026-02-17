@@ -2,7 +2,7 @@ import { describe } from "riteway";
 import { Observe } from "@adobe/data/observe";
 import { createAgentHttpService } from "../dist/index.js";
 
-const createMockDynamicService = () => {
+const createMockAgenticService = () => {
   const [statesObserve, setStates] = Observe.createState({
     turn: { schema: { type: "string" }, value: "agent" },
     board: { schema: { type: "array", items: { type: "string" } }, value: Array(9).fill(" ") }
@@ -48,7 +48,7 @@ const createMockDynamicService = () => {
 
   return {
     service: {
-      serviceName: "dynamic-service",
+      serviceName: "agentic-service",
       states: statesObserve,
       actions: actionsObserve,
       execute: async (actionName, input) => {
@@ -69,7 +69,7 @@ const createMockDynamicService = () => {
 };
 
 describe("createAgentHttpService", async (assert) => {
-  const { service, simulateHumanMove } = createMockDynamicService();
+  const { service, simulateHumanMove } = createMockAgenticService();
   const agentHttp = createAgentHttpService({
     service,
     host: "127.0.0.1",
@@ -209,7 +209,7 @@ describe("createAgentHttpService", async (assert) => {
     expected: false
   });
 
-  const { service: uiService } = createMockDynamicService();
+  const { service: uiService } = createMockAgenticService();
   const noUiHttp = createAgentHttpService({
     service: uiService,
     host: "127.0.0.1",
@@ -226,7 +226,7 @@ describe("createAgentHttpService", async (assert) => {
     expected: 404
   });
 
-  const { service: enabledUiService } = createMockDynamicService();
+  const { service: enabledUiService } = createMockAgenticService();
   const uiHttp = createAgentHttpService({
     service: enabledUiService,
     host: "127.0.0.1",

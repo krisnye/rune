@@ -72,10 +72,24 @@ const installCachesPolyfill = (): void => {
 
 installCachesPolyfill();
 
+const runeServerPort = 4000;
 const { Database } = await import("@adobe/data/ecs");
-const { runeServerPlugin } = await import("./plugins/rune-server-plugin.js");
+const { createAgentHttpService } = await import("@paralleldrive/rune");
+const { agentPlugin } = await import("./plugins/agent-plugin.js");
 
-const db = Database.create(runeServerPlugin);
+const db = Database.create(agentPlugin);
+const agentHttpService = createAgentHttpService({
+  service: db.services.agent,
+  port: runeServerPort,
+  enableUi: true
+});
+
+try {
+  const { info } = await agentHttpService.start();
+  console.log(`Rune agent server listening on ${info.url}`);
+} catch (error: unknown) {
+  console.error("Failed to start rune agent server", error);
+}
 
 console.log("TicTacToe agent database initialized.");
 console.log("Rune agent server is expected at http://127.0.0.1:4000/");

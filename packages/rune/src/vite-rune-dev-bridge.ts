@@ -65,15 +65,8 @@ export const createBridgeHostRegistry = (): BridgeHostRegistry => {
         return { accepted: true };
       }
 
-      if (currentHost.transportId === transport.id) {
-        currentHost = { hostId, transportId: transport.id, send: transport.send };
-        return { accepted: true };
-      }
-
-      return {
-        accepted: false,
-        reason: "host_already_registered"
-      };
+      currentHost = { hostId, transportId: transport.id, send: transport.send };
+      return { accepted: true };
     },
     disconnectTransport: (transportId) => {
       if (currentHost?.transportId === transportId) {

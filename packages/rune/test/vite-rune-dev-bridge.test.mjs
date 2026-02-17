@@ -74,8 +74,6 @@ describe("createBridgeHostRegistry", async (assert) => {
   const secondTransport = { id: second.socket, send: (payload) => second.socket.send(JSON.stringify(payload)) };
 
   const firstResult = registry.registerHost("host-a", firstTransport);
-  const secondResult = registry.registerHost("host-b", secondTransport);
-
   assert({
     given: "first host socket registers",
     should: "be accepted as active host",
@@ -89,14 +87,23 @@ describe("createBridgeHostRegistry", async (assert) => {
     }
   });
 
+  const secondResult = registry.registerHost("host-b", secondTransport);
+
   assert({
     given: "another socket registers while host is active",
-    should: "be rejected",
+    should: "replace the active host",
     actual: secondResult,
-    expected: { accepted: false, reason: "host_already_registered" }
+    expected: { accepted: true }
   });
 
-  registry.disconnectTransport(first.socket);
+  assert({
+    given: "second host registration is accepted",
+    should: "become the active host",
+    actual: registry.getStatus(),
+    expected: { connected: true, hostId: "host-b" }
+  });
+
+  registry.disconnectTransport(second.socket);
   assert({
     given: "active host disconnects",
     should: "clear host status",
@@ -166,22 +173,22 @@ describe("createRuneDevBridgeVitePlugin", async (assert) => {
 
   assert({
     given: "first and second websocket clients try to register host",
-    should: "accept first and reject second",
+    should: "allow second registration to take over",
     actual: {
       firstAccepted: firstResponse.payload.accepted,
       firstActiveHost: firstResponse.payload.activeHostId,
       secondAccepted: secondResponse.payload.accepted,
-      secondReason: secondResponse.payload.reason
+      secondActiveHost: secondResponse.payload.activeHostId
     },
     expected: {
       firstAccepted: true,
       firstActiveHost: "tab-1",
-      secondAccepted: false,
-      secondReason: "host_already_registered"
+      secondAccepted: true,
+      secondActiveHost: "tab-2"
     }
   });
 
-  first.emitClose();
+  second.emitClose();
 
   const postCloseResponse = createResponseCapture();
 

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Observe } from "@adobe/data/observe";
-import { DynamicService } from "@adobe/data/service";
+import { AgenticService } from "@adobe/data/service";
 import { type Schema, validate } from "@adobe/data/schema";
 
 const reservedWaitAction = "wait";
@@ -11,7 +11,7 @@ const defaultMaxWaitMs = 30_000;
 const defaultUiPath = "/ui";
 
 export interface CreateAgentHttpServiceArgs {
-  readonly service: DynamicService.DynamicService;
+  readonly service: AgenticService;
   readonly host?: string;
   readonly port?: number;
   readonly basePath?: string;
