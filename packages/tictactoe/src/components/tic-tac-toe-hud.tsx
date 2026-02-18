@@ -1,6 +1,6 @@
 import { useObservableValues } from "@adobe/data-react";
-import { useTicTacToeDatabase } from "./hooks/use-tictactoe-database.js";
-import { BoardState } from "./types/board-state/board-state.js";
+import { useTicTacToeDatabase } from "../hooks/use-tictactoe-database.js";
+import { BoardState } from "../types/board-state/board-state.js";
 
 interface HudValues {
   readonly board: string;

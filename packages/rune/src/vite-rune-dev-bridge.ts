@@ -87,6 +87,28 @@ const pathnameOf = (urlValue: string | undefined): string => {
   }
 };
 
+const queryParam = (urlValue: string | undefined, name: string): string | undefined => {
+  if (!urlValue) {
+    return undefined;
+  }
+  try {
+    return new URL(urlValue, "http://localhost").searchParams.get(name) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const parseInputFromPostQuery = (postValue: string | undefined): unknown => {
+  if (postValue === undefined || postValue === "") {
+    return undefined;
+  }
+  try {
+    return JSON.parse(postValue);
+  } catch {
+    return postValue;
+  }
+};
+
 const sendJson = (
   response: {
     writeHead: (statusCode: number, headers: Record<string, string>) => void;
@@ -241,17 +263,31 @@ export const createRuneDevBridgeVitePlugin = ({
             return;
           }
 
-          if (request.method === "POST" && pathname.startsWith(actionsPrefix)) {
+          if (pathname.startsWith(actionsPrefix)) {
             const actionName = decodeURIComponent(pathname.slice(actionsPrefix.length));
             if (!actionName) {
               sendJson(response, 404, { ok: false, error: { code: "not_found", message: "Missing action name" } });
               return;
             }
 
+            let input: unknown;
+            if (request.method === "GET") {
+              const postValue = queryParam(request.url, "post");
+              if (postValue === undefined) {
+                sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value> to invoke actions" } });
+                return;
+              }
+              input = parseInputFromPostQuery(postValue);
+            } else if (request.method === "POST") {
+              input = await parseBody(request);
+            } else {
+              sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value>" } });
+              return;
+            }
+
             try {
-              const input = await parseBody(request);
               // For wait, use a relay timeout at least as long as the requested wait so the host
-              // can respond with { ok: true, timedOut: true, snapshot } when no change occurs.
+              // can respond with { timedOut, revision, states, actions } when no change occurs.
               const waitRequestTimeoutMs =
                 actionName === "wait" &&
                 input !== undefined &&

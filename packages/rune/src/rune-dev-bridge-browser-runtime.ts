@@ -13,21 +13,21 @@ import {
 const bridgeActionsBasePath = "/__rune_bridge/actions/";
 const bridgeDefaultWaitTimeoutMs = 30_000;
 
-/** Tells an AI agent how to formulate a valid action request. */
-const ACTION_REQUEST_CONVENTION =
-  "POST to the action href with Content-Type: application/json. Request body must be a single JSON value that validates against the action's input schema (e.g. integer 0–8 for playMove; object { since?, timeoutMs? } for wait). Do not wrap the value in { input: ... }.";
+type BridgeAction = {
+  readonly description: string;
+  readonly inputSchema?: unknown;
+  readonly method: "POST";
+  readonly href: string;
+  readonly bodyDescription?: string;
+  readonly meta?: true;
+};
 
 type BridgeSnapshot = {
+  /** Service description (purpose, role). Only included in getSnapshot; omitted from wait/action responses. */
+  readonly description?: string;
   readonly revision: number;
   readonly states: Record<string, { readonly schema: unknown; readonly value: unknown }>;
-  readonly actions: Record<string, {
-    readonly input: unknown;
-    readonly method: "POST";
-    readonly href: string;
-    readonly meta?: true;
-  }>;
-  /** Tells an AI agent how to formulate a valid action request. */
-  readonly _actionRequestBody: string;
+  readonly actions: Record<string, BridgeAction>;
 };
 
 type WaitRequest = {
@@ -156,7 +156,7 @@ export const createRuneBrowserHostRuntime = ({
   let revision = 0;
   let snapshot: BridgeSnapshot | null = null;
   let currentStates: Record<string, { readonly schema: unknown; readonly value: unknown }> = {};
-  let currentActions: Record<string, { readonly schema: unknown; readonly execute: (input?: unknown) => Promise<unknown> }> = {};
+  let currentActions: Record<string, { readonly description?: string; readonly schema: unknown; readonly execute: (input?: unknown) => Promise<unknown> }> = {};
   let nextRequestId = 1;
   let socket: BridgeWebSocket | null = null;
   let hmrClient: HmrClient | null = null;
@@ -171,23 +171,44 @@ export const createRuneBrowserHostRuntime = ({
     onStatusChange?.(status);
   };
 
+  const buildAction = (
+    description: string,
+    inputSchema: unknown | undefined | false,
+    href: string,
+    meta?: true
+  ): BridgeAction => {
+    const hasInput = inputSchema !== undefined && inputSchema !== false;
+    return {
+      description,
+      ...(hasInput ? { inputSchema } : {}),
+      method: "POST" as const,
+      href,
+      ...(hasInput ? { bodyDescription: "JSON value matching inputSchema" } : {}),
+      ...(meta === true ? { meta: true as const } : {})
+    };
+  };
+
   const buildSnapshot = (): BridgeSnapshot => ({
     revision,
     states: currentStates,
-    _actionRequestBody: ACTION_REQUEST_CONVENTION,
     actions: {
       ...Object.fromEntries(
-        Object.entries(currentActions).map(([actionName, action]) => [
-          actionName,
-          {
-            input: bodySchema(action),
-            method: "POST" as const,
-            href: `${bridgeActionsBasePath}${encodeURIComponent(actionName)}`
-          }
-        ])
+        Object.entries(currentActions).map(([actionName, action]) => {
+          const inputSchema = bodySchema(action);
+          const description = typeof action.description === "string" ? action.description : actionName;
+          return [
+            actionName,
+            buildAction(
+              description,
+              inputSchema,
+              `${bridgeActionsBasePath}${encodeURIComponent(actionName)}`
+            )
+          ];
+        })
       ),
-      wait: {
-        input: {
+      wait: buildAction(
+        "Wait for state change",
+        {
           type: "object",
           properties: {
             since: { type: "integer", minimum: 0 },
@@ -195,10 +216,9 @@ export const createRuneBrowserHostRuntime = ({
           },
           additionalProperties: false
         },
-        method: "POST",
-        href: `${bridgeActionsBasePath}wait`,
-        meta: true
-      }
+        `${bridgeActionsBasePath}wait`,
+        true
+      )
     }
   });
 
@@ -221,7 +241,7 @@ export const createRuneBrowserHostRuntime = ({
   })(({ states, actions }) => {
     revision += 1;
     currentStates = states as Record<string, { readonly schema: unknown; readonly value: unknown }>;
-    currentActions = actions as Record<string, { readonly schema: unknown; readonly execute: (input?: unknown) => Promise<unknown> }>;
+    currentActions = actions as Record<string, { readonly description?: string; readonly schema: unknown; readonly execute: (input?: unknown) => Promise<unknown> }>;
     snapshot = buildSnapshot();
     resolveWaiters();
   });
@@ -299,7 +319,14 @@ export const createRuneBrowserHostRuntime = ({
     }
 
     if (envelope.type === "getSnapshot") {
-      sendBridge("getSnapshotResult", envelope.requestId, { ok: true, snapshot });
+      const desc = (service as unknown as { description?: (cb: (v: unknown) => void) => unknown }).description;
+      const raw = typeof desc === "function" ? await Observe.toPromise(desc as Observe<string>) : undefined;
+      const serviceDescription = typeof raw === "string" ? raw : undefined;
+      const payload =
+        serviceDescription !== undefined
+          ? { description: serviceDescription, revision: snapshot.revision, states: snapshot.states, actions: snapshot.actions }
+          : snapshot;
+      sendBridge("getSnapshotResult", envelope.requestId, payload);
       return;
     }
 
@@ -308,36 +335,39 @@ export const createRuneBrowserHostRuntime = ({
       const actionName = typeof payload?.actionName === "string" ? payload.actionName : "";
       if (actionName.trim() === "") {
         sendBridge("invokeActionResult", envelope.requestId, {
-          ok: false,
-          error: {
-            code: "invalid_action_name",
-            message: "invokeAction requires actionName"
-          },
-          snapshot
+          error: { code: "invalid_action_name", message: "invokeAction requires actionName" },
+          revision: snapshot.revision,
+          states: snapshot.states,
+          actions: snapshot.actions
         });
         return;
       }
 
       const result = await service.execute(actionName, payload?.input);
-      sendBridge("invokeActionResult", envelope.requestId, typeof result === "string"
-        ? {
-            ok: false,
-            error: {
-              code: "action_rejected",
-              message: result
-            },
-            snapshot
-          }
-        : {
-            ok: true,
-            snapshot
-          });
+      if (typeof result === "string") {
+        sendBridge("invokeActionResult", envelope.requestId, {
+          error: { code: "action_rejected", message: result },
+          revision: snapshot.revision,
+          states: snapshot.states,
+          actions: snapshot.actions
+        });
+      } else {
+        sendBridge("invokeActionResult", envelope.requestId, snapshot);
+      }
       return;
     }
 
     if (envelope.type === "waitForChange") {
       const result = await waitForChange(envelope.payload);
-      sendBridge("waitForChangeResult", envelope.requestId, result);
+      if (!result.ok) {
+        sendBridge("waitForChangeResult", envelope.requestId, { error: result.error });
+        return;
+      }
+      const snap = result.snapshot;
+      const payload = snap
+        ? { timedOut: result.timedOut, revision: snap.revision, states: snap.states, actions: snap.actions }
+        : { timedOut: result.timedOut };
+      sendBridge("waitForChangeResult", envelope.requestId, payload);
     }
   };
 

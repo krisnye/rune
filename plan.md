@@ -287,3 +287,97 @@ No app-specific bridge files, no agent-dev-server, no optional paths.
 
 - Do one thing at a time; get user approval before moving on when the plan says so.
 - Do not modify files unless the command or user explicitly asks; for this plan, the explicit ask is to add the debugging plan and execute the debugging steps.
+
+---
+
+# Plan: Action Snapshot Pattern Update
+
+## Goal
+
+1. **Snapshot/action shape** — Use `description`, `inputSchema`, `method`, `href`, `bodyDescription` (no `name`, no `bodyExample`, no `_actionRequestBody`).
+2. **Description first** — Object key order matters: `description` is the first field in the top-level snapshot (getSnapshot only) and in each action.
+3. **GET ?post= for humans** — Middleware converts `GET .../actions/playMove?post=4` into an equivalent POST (body = value from query) so humans can test via browser address bar; `GET .../resetGame?post` with no value → POST with no body.
+
+---
+
+## Current vs Target
+
+| Aspect | Current | Target |
+|--------|---------|--------|
+| Snapshot top-level | `revision`, `states`, `actions`, `_actionRequestBody`, `description?` | `description?` (first), `revision`, `states`, `actions` |
+| Action shape | `input`, `method`, `href`, `meta?` | `description`, `inputSchema?`, `method`, `href`, `bodyDescription?`, `meta?` |
+| `_actionRequestBody` | Present | Remove |
+| GET to action URL | Not supported | Supported: `?post` or `?post=<value>` → convert to POST, then relay |
+
+---
+
+## Files to Change
+
+| File | Changes |
+|------|---------|
+| `rune-dev-bridge-browser-runtime.ts` | Update `BridgeSnapshot` type, `buildSnapshot()`, action builder (description from `actionMeta`, inputSchema, bodyDescription), key order (description first); remove `ACTION_REQUEST_CONVENTION` and `_actionRequestBody`. |
+| `vite-rune-dev-bridge.ts` | Add GET handling for `/__rune_bridge/actions/<name>`: if `?post` or `?post=<value>` in query, parse query, derive body (or empty), then call same relay logic as POST. |
+| `README.md` | Update "Using the bridge" to reflect new action shape; document GET ?post= for human testing. |
+
+---
+
+## Implementation Checklist
+
+### Step 1: Browser runtime — action shape and key order
+
+- [ ] Remove `ACTION_REQUEST_CONVENTION` and `_actionRequestBody` from type and `buildSnapshot`.
+- [ ] Add per-action `description` (from `actionMeta.description`) and `bodyDescription` (when action has input: `"JSON value matching inputSchema"`).
+- [ ] Rename `input` → `inputSchema`; use `bodySchema(action)` as the value; omit `inputSchema` and `bodyDescription` for no-input actions.
+- [ ] For each action object, use key order: `description`, then `inputSchema` (if any), `method`, `href`, `bodyDescription` (if any), `meta` (if any).
+- [ ] For top-level snapshot (getSnapshot only): key order `description` (first, when present), `revision`, `states`, `actions`.
+
+### Step 2: Browser runtime — wait action
+
+- [ ] Update `wait` action to same shape: `description: "Wait for state change"` (first), `inputSchema`, `method`, `href`, `bodyDescription`, `meta: true`.
+
+### Step 3: Vite middleware — GET ?post= shim
+
+- [ ] For `GET /__rune_bridge/actions/<actionName>` with query param `post` (present, value optional):
+  - If `post` has a value: treat as JSON body string (e.g. `?post=4` → body `"4"`; `?post={"x":1}` → body `"{\"x\":1}"`).
+  - If `post` with no value or empty: body = empty/undefined.
+  - Run the same relay logic as POST (parse actionName, relay invokeAction or waitForChange with that body).
+- [ ] If GET without `?post`, return 405 or 400 (method not allowed for GET without the shim).
+
+### Step 4: README
+
+- [ ] Update snapshot description: `description` first, `revision`, `states`, `actions`; each action has `description`, `inputSchema?`, `method`, `href`, `bodyDescription?`.
+- [ ] Add note: `GET .../actions/playMove?post=4` works for human testing (equivalent to POST with body `4`).
+
+---
+
+## Suggested Execution Order
+
+1. **Step 1–2** (browser runtime) — Shape and order; no server changes yet.
+2. **Step 3** (Vite middleware) — GET ?post= support.
+3. **Step 4** (README) — Docs update.
+4. **Verify** — curl GET snapshot, curl POST action, browser GET ?post=.
+
+---
+
+## Object Key Order (JavaScript)
+
+Use explicit object literals with keys in the desired order; `JSON.stringify` preserves insertion order for string keys. Example:
+
+```ts
+// Action with input
+{
+  description: action.description,
+  inputSchema: bodySchema(action),
+  method: "POST",
+  href: `...`,
+  bodyDescription: "JSON value matching inputSchema"
+}
+
+// Snapshot (getSnapshot only)
+{
+  description: serviceDescription,
+  revision,
+  states,
+  actions
+}
+```

@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Container, Graphics, Text } from "pixi.js";
 import { extend } from "@pixi/react";
-import { App } from "./App.js";
+import { App } from "./app.js";
 
 extend({ Container, Graphics, Text });
 
