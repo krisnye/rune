@@ -121,15 +121,22 @@ const sendJson = (
   response.end(JSON.stringify(payload));
 };
 
+const invalidJsonErrorCode = "invalid_json" as const;
+
 const parseBody = async (request: unknown): Promise<unknown> => {
   if (!request || typeof request !== "object" || !(Symbol.asyncIterator in request)) {
     return undefined;
   }
 
   const chunks: Buffer[] = [];
-  for await (const chunk of request as AsyncIterable<unknown>) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  try {
+    for await (const chunk of request as AsyncIterable<unknown>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    }
+  } catch (err) {
+    throw { code: invalidJsonErrorCode, message: "Failed to read request body", cause: err };
   }
+
   if (chunks.length === 0) {
     return undefined;
   }
@@ -137,7 +144,12 @@ const parseBody = async (request: unknown): Promise<unknown> => {
   if (text === "") {
     return undefined;
   }
-  return JSON.parse(text);
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const message = err instanceof SyntaxError ? err.message : "Invalid JSON in request body";
+    throw { code: invalidJsonErrorCode, message, cause: err };
+  }
 };
 
 export const createRuneDevBridgeVitePlugin = ({
@@ -271,18 +283,30 @@ export const createRuneDevBridgeVitePlugin = ({
             }
 
             let input: unknown;
-            if (request.method === "GET") {
-              const postValue = queryParam(request.url, "post");
-              if (postValue === undefined) {
-                sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value> to invoke actions" } });
+            try {
+              if (request.method === "GET") {
+                const postValue = queryParam(request.url, "post");
+                if (postValue === undefined) {
+                  sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value> to invoke actions" } });
+                  return;
+                }
+                input = parseInputFromPostQuery(postValue);
+              } else if (request.method === "POST") {
+                input = await parseBody(request);
+              } else {
+                sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value>" } });
                 return;
               }
-              input = parseInputFromPostQuery(postValue);
-            } else if (request.method === "POST") {
-              input = await parseBody(request);
-            } else {
-              sendJson(response, 405, { ok: false, error: { code: "method_not_allowed", message: "Use POST or GET with ?post or ?post=<value>" } });
-              return;
+            } catch (bodyError: unknown) {
+              const err = bodyError as { code?: string; message?: string };
+              if (err?.code === invalidJsonErrorCode) {
+                sendJson(response, 400, {
+                  ok: false,
+                  error: { code: "invalid_json", message: err.message ?? "Invalid JSON in request body" }
+                });
+                return;
+              }
+              throw bodyError;
             }
 
             try {

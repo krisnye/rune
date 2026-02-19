@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect 4</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        padding: 0 0 1rem 0;
+        background: #3a3a3a;
+        color: #e8e8e8;
+        text-align: center;
+      }
+      #root {
+        display: block;
+        min-height: 420px;
+        padding: 2rem 1rem 0;
+      }
+      .title-box {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        background: #252525;
+        padding: 0.5rem 1.25rem;
+        border-radius: 0;
+      }
+      .title-box h1 {
+        margin: 0;
+        font-size: 2.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="title-box"><h1>Connect 4</h1></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
