@@ -1,0 +1,29 @@
+{
+  "name": "connect4",
+  "version": "0.1.0",
+  "description": "Minimal Vite + React app (Connect 4).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "clean": "rm -rf dist",
+    "dev": "vite",
+    "lint": "pnpm run typecheck",
+    "test": "pnpm run typecheck",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@adobe/data": "^0.9.27",
+    "@adobe/data-react": "0.9.27",
+    "@paralleldrive/rune": "workspace:*",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
