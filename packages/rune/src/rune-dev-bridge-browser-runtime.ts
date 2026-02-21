@@ -11,7 +11,7 @@ import {
 } from "./rune-dev-bridge-client-types.js";
 
 const bridgeActionsBasePath = "/__rune_bridge/actions/";
-const bridgeDefaultWaitTimeoutMs = 30_000;
+const bridgeDefaultWaitTimeoutMs = 60_000;
 
 type BridgeAction = {
   readonly description: string;
@@ -188,39 +188,44 @@ export const createRuneBrowserHostRuntime = ({
     };
   };
 
-  const buildSnapshot = (): BridgeSnapshot => ({
-    revision,
-    states: currentStates,
-    actions: {
-      ...Object.fromEntries(
-        Object.entries(currentActions).map(([actionName, action]) => {
-          const inputSchema = bodySchema(action);
-          const description = typeof action.description === "string" ? action.description : actionName;
-          return [
-            actionName,
-            buildAction(
-              description,
-              inputSchema,
-              `${bridgeActionsBasePath}${encodeURIComponent(actionName)}`
-            )
-          ];
-        })
-      ),
-      wait: buildAction(
-        "Wait for state change",
-        {
-          type: "object",
-          properties: {
-            since: { type: "integer", minimum: 0 },
-            timeoutMs: { type: "integer", minimum: 0, maximum: bridgeDefaultWaitTimeoutMs }
-          },
-          additionalProperties: false
-        },
-        `${bridgeActionsBasePath}wait`,
-        true
-      )
-    }
-  });
+  const buildSnapshot = (): BridgeSnapshot => {
+    const serviceActions = Object.fromEntries(
+      Object.entries(currentActions).map(([actionName, action]) => {
+        const inputSchema = bodySchema(action);
+        const description = typeof action.description === "string" ? action.description : actionName;
+        return [
+          actionName,
+          buildAction(
+            description,
+            inputSchema,
+            `${bridgeActionsBasePath}${encodeURIComponent(actionName)}`
+          )
+        ];
+      })
+    );
+    const hasOtherActions = Object.keys(currentActions).length > 0;
+    const actions = hasOtherActions
+      ? serviceActions
+      : {
+          ...serviceActions,
+          wait: buildAction(
+            "Wait for the snapshot to change. Only available when no other actions are available. " +
+            "Send the current snapshot's revision in the optional `since` field; the request resolves when the revision changes or after `timeoutMs` (default 60 seconds). " +
+            "Body: optional { since?: number, timeoutMs?: number }.",
+            {
+              type: "object",
+              properties: {
+                since: { type: "integer", minimum: 0, description: "Snapshot revision to wait for a change from; omit or use current snapshot.revision" },
+                timeoutMs: { type: "integer", minimum: 0, maximum: bridgeDefaultWaitTimeoutMs, description: "Max milliseconds to wait (default 60000)" }
+              },
+              additionalProperties: false
+            },
+            `${bridgeActionsBasePath}wait`,
+            true
+          )
+        };
+    return { revision, states: currentStates, actions };
+  };
 
   const resolveWaiters = (): void => {
     const pending: typeof waitListeners = [];
@@ -281,6 +286,15 @@ export const createRuneBrowserHostRuntime = ({
     | { readonly ok: true; readonly timedOut: boolean; readonly snapshot: BridgeSnapshot | null }
     | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
   > => {
+    if (Object.keys(currentActions).length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: "action_unavailable",
+          message: "wait is only available when no other actions are available"
+        }
+      };
+    }
     const parsed = parseWaitRequest(payload);
     if (!parsed) {
       return {

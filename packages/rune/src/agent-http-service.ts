@@ -7,7 +7,7 @@ const reservedWaitAction = "wait";
 const defaultHost = "127.0.0.1";
 const defaultPort = 3001;
 const defaultBasePath = "/";
-const defaultMaxWaitMs = 30_000;
+const defaultMaxWaitMs = 60_000;
 const defaultUiPath = "/ui";
 
 export interface CreateAgentHttpServiceArgs {
@@ -37,6 +37,7 @@ export interface AgentActionDescriptor {
   readonly method: "POST";
   readonly href: string;
   readonly meta?: true;
+  readonly description?: string;
 }
 
 export interface AgentSnapshot {
@@ -182,22 +183,30 @@ export const createAgentHttpService = ({
       ])
     );
 
-    return {
-      ...described,
-      [reservedWaitAction]: {
-        schema: {
-          type: "object",
-          properties: {
-            since: { type: "integer", minimum: 0 },
-            timeoutMs: { type: "integer", minimum: 0, maximum: maxWaitMs }
-          },
-          additionalProperties: false
-        },
-        method: "POST",
-        href: `${actionsBasePath}${reservedWaitAction}`,
-        meta: true
-      }
-    };
+    const hasOtherActions = Object.keys(currentServiceActions).length > 0;
+    const waitDescription =
+      "Wait for the snapshot to change. Only available when no other actions are available. " +
+      "Send the current snapshot's revision in the optional `since` field; the request resolves when the revision changes or after `timeoutMs` (default 60 seconds). " +
+      "Body: optional { since?: number, timeoutMs?: number }.";
+    return hasOtherActions
+      ? described
+      : {
+          ...described,
+          [reservedWaitAction]: {
+            description: waitDescription,
+            schema: {
+              type: "object",
+              properties: {
+                since: { type: "integer", minimum: 0, description: "Snapshot revision to wait for a change from; omit or use current snapshot.revision" },
+                timeoutMs: { type: "integer", minimum: 0, maximum: maxWaitMs, description: "Max milliseconds to wait (default 60000)" }
+              },
+              additionalProperties: false
+            },
+            method: "POST",
+            href: `${actionsBasePath}${reservedWaitAction}`,
+            meta: true
+          }
+        };
   };
 
   const resolveWaiters = (timedOut: boolean): void => {
@@ -322,6 +331,18 @@ export const createAgentHttpService = ({
   const handleActionPost = async (response: ServerResponse, actionName: string, input: unknown): Promise<void> => {
     await ensureReady();
     if (actionName === reservedWaitAction) {
+      const hasOtherActions = Object.keys(currentServiceActions).length > 0;
+      if (hasOtherActions) {
+        json(response, 409, {
+          ok: false,
+          error: {
+            code: "action_unavailable",
+            message: "wait is only available when no other actions are available"
+          },
+          snapshot: currentSnapshot
+        });
+        return;
+      }
       await handleWait(response, input);
       return;
     }

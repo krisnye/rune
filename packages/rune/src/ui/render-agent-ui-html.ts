@@ -50,8 +50,8 @@ export const renderAgentUiHtml = ({
         <button id="runAction">Run Action</button>
         <button id="refresh">Refresh Snapshot</button>
       </div>
-      <div class="row" style="margin-top: 0.75rem;">
-        <input id="waitTimeoutMs" type="number" min="0" value="30000" />
+      <div id="waitRow" class="row" style="margin-top: 0.75rem;">
+        <input id="waitTimeoutMs" type="number" min="0" value="60000" />
         <button id="waitForChange">Wait For Change</button>
       </div>
     </div>
@@ -85,11 +85,16 @@ export const renderAgentUiHtml = ({
       responseEl.textContent = JSON.stringify(value, null, 2);
     };
 
+    const waitRowEl = document.getElementById("waitRow");
+
     const setSnapshot = (snapshot) => {
       currentSnapshot = snapshot;
       snapshotEl.textContent = JSON.stringify(snapshot, null, 2);
       const names = Object.keys(snapshot?.actions ?? {});
       actionNameEl.innerHTML = names.map((name) => '<option value="' + name + '">' + name + '</option>').join("");
+      if (waitRowEl) {
+        waitRowEl.style.display = Object.prototype.hasOwnProperty.call(snapshot?.actions ?? {}, "wait") ? "" : "none";
+      }
     };
 
     const fetchSnapshot = async () => {
@@ -146,10 +151,10 @@ export const renderAgentUiHtml = ({
       if (!currentSnapshot) {
         await fetchSnapshot();
       }
-      const timeoutMs = Number(waitTimeoutMsEl.value ?? 30000);
+      const timeoutMs = Number(waitTimeoutMsEl.value ?? 60000);
       await runAction("wait", {
         since: currentSnapshot?.revision ?? 0,
-        timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 30000
+        timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 60000
       });
     });
 

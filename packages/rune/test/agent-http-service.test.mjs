@@ -82,8 +82,8 @@ describe("createAgentHttpService", async (assert) => {
   const rootPayload = await rootResponse.json();
 
   assert({
-    given: "service has started",
-    should: "serve the current snapshot on GET /",
+    given: "service has started with other actions available",
+    should: "serve snapshot with playMove and without wait (wait only when no other actions)",
     actual: {
       status: rootResponse.status,
       ok: rootPayload.ok,
@@ -94,8 +94,25 @@ describe("createAgentHttpService", async (assert) => {
       status: 200,
       ok: true,
       hasPlayMove: true,
-      hasWait: true
+      hasWait: false
     }
+  });
+
+  const waitWhenOtherActionsExist = await fetch(`${startResult.info.origin}/actions/wait`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ timeoutMs: 10 })
+  });
+  const waitWhenOtherPayload = await waitWhenOtherActionsExist.json();
+
+  assert({
+    given: "other actions are available",
+    should: "reject POST to wait with 409 action_unavailable",
+    actual: {
+      status: waitWhenOtherActionsExist.status,
+      code: waitWhenOtherPayload?.error?.code
+    },
+    expected: { status: 409, code: "action_unavailable" }
   });
 
   const playResponse = await fetch(`${startResult.info.origin}/actions/playMove`, {
@@ -155,18 +172,25 @@ describe("createAgentHttpService", async (assert) => {
     }
   });
 
+  const playResponse2 = await fetch(`${startResult.info.origin}/actions/playMove`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(1)
+  });
+  const playPayload2 = await playResponse2.json();
+
   const timeoutWait = await fetch(`${startResult.info.origin}/actions/wait`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      since: waitPayload.snapshot.revision,
+      since: playPayload2.snapshot.revision,
       timeoutMs: 100
     })
   });
   const timeoutPayload = await timeoutWait.json();
 
   assert({
-    given: "no state changes happen while waiting",
+    given: "no state changes happen while waiting (human turn, no other actions)",
     should: "return a timed out wait response",
     actual: {
       status: timeoutWait.status,
@@ -178,6 +202,13 @@ describe("createAgentHttpService", async (assert) => {
     }
   });
 
+  const playResponse3 = await fetch(`${startResult.info.origin}/actions/playMove`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(2)
+  });
+  const playPayload3 = await playResponse3.json();
+
   const waitWithoutBody = await fetch(`${startResult.info.origin}/actions/wait`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -186,7 +217,7 @@ describe("createAgentHttpService", async (assert) => {
   const waitWithoutBodyPayload = await waitWithoutBody.json();
 
   assert({
-    given: "wait is called without input",
+    given: "wait is called without input when no other actions exist",
     should: "use default wait values and still succeed",
     actual: {
       status: waitWithoutBody.status,
